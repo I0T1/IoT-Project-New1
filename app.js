@@ -36,15 +36,11 @@ let isMotorOn = false;
 
 // Clear inputs and setup listeners on page load
 window.onload = () => {
-    resetInputs();
-    setupRealtimeListeners();
-};
-
-const resetInputs = () => {
     document.getElementById("email").value = "";
     document.getElementById("password").value = "";
     lampStatus.textContent = "Loading...";
     motorStatus.textContent = "Loading...";
+    setupRealtimeListeners();
 };
 
 // Login form submission
@@ -56,9 +52,9 @@ loginForm.addEventListener("submit", (e) => {
 
     signInWithEmailAndPassword(auth, email, password)
         .then(() => {
-            showSuccess("Login successful! Redirecting...");
+            successMessage.textContent = "Login successful! Redirecting...";
             setTimeout(() => {
-                hideMessages();
+                successMessage.textContent = "";
                 loginContainer.style.display = "none";
                 controlContainer.style.display = "block";
 
@@ -67,61 +63,32 @@ loginForm.addEventListener("submit", (e) => {
             }, 1000);
         })
         .catch((error) => {
-            handleAuthError(error);
+            const errorCode = error.code;
+            let message = "An unexpected error occurred.";
+            if (errorCode === "auth/user-not-found") message = "User not found.";
+            if (errorCode === "auth/wrong-password") message = "Incorrect password.";
+            if (errorCode === "auth/invalid-email") message = "Invalid email.";
+            errorMessage.textContent = message;
+            setTimeout(() => (errorMessage.textContent = ""), 2000);
         });
 });
 
-const handleAuthError = (error) => {
-    const errorCode = error.code;
-    let message = "An unexpected error occurred.";
-    switch (errorCode) {
-        case "auth/user-not-found":
-            message = "User not found.";
-            break;
-        case "auth/wrong-password":
-            message = "Incorrect password.";
-            break;
-        case "auth/invalid-email":
-            message = "Invalid email.";
-            break;
-    }
-    showError(message);
-};
-
-const showError = (message) => {
-    errorMessage.textContent = message;
-    setTimeout(() => (errorMessage.textContent = ""), 2000);
-};
-
-const showSuccess = (message) => {
-    successMessage.textContent = message;
-    setTimeout(() => (successMessage.textContent = ""), 2000);
-};
-
-const hideMessages = () => {
-    errorMessage.textContent = "";
-    successMessage.textContent = "";
-};
-
 // Toggle lamp
 lampButton.addEventListener("click", () => {
-    toggleDeviceStatus('/Lamp', lampStatus, (newStatus) => isLampOn = newStatus);
+    isLampOn = !isLampOn;
+    updateDeviceStatus('/Lamp', isLampOn, lampStatus);
 });
 
 // Toggle motor
 motorButton.addEventListener("click", () => {
-    toggleDeviceStatus('/Ac', motorStatus, (newStatus) => isMotorOn = newStatus);
+    isMotorOn = !isMotorOn;
+    updateDeviceStatus('/Ac', isMotorOn, motorStatus);
 });
-
-const toggleDeviceStatus = (path, statusElement, updateStateCallback) => {
-    const newStatus = !isLampOn;
-    updateDeviceStatus(path, newStatus, statusElement);
-    updateStateCallback(newStatus);
-};
 
 // Update device status in Firebase and UI
 const updateDeviceStatus = (path, status, statusElement) => {
-    set(ref(db, path), status)
+    const deviceRef = ref(db, path);
+    set(deviceRef, status)
         .then(() => {
             statusElement.textContent = `Status: ${status ? "On" : "Off"}`;
             console.log(`${path} status updated to:`, status);
@@ -133,39 +100,73 @@ const updateDeviceStatus = (path, status, statusElement) => {
 
 // Logout with confirmation
 logoutButton.addEventListener("click", () => {
-    if (confirm("Are you sure you want to log out?")) {
+    const confirmLogout = confirm("Are you sure you want to log out?");
+    if (confirmLogout) {
         signOut(auth)
             .then(() => {
-                resetInputs();
+                document.getElementById("email").value = "";
+                document.getElementById("password").value = "";
                 controlContainer.style.display = "none";
                 loginContainer.style.display = "block";
-                showSuccess("You have successfully logged out.");
+                successMessage.textContent = "You have successfully logged out.";
+                setTimeout(() => (successMessage.textContent = ""), 2000);
             })
             .catch((error) => {
                 console.error("Logout failed:", error.message);
             });
+    } else {
+        console.log("Logout canceled by user.");
     }
 });
 
 // Real-time listeners for device status
 const setupRealtimeListeners = () => {
-    setupListener('/Lamp', lampStatus, (status) => isLampOn = status);
-    setupListener('/Ac', motorStatus, (status) => isMotorOn = status);
-};
+    const lampRef = ref(db, '/Lamp');
+    const motorRef = ref(db, '/Ac');
 
-const setupListener = (path, statusElement, updateStateCallback) => {
-    onValue(ref(db, path), (snapshot) => {
+    onValue(lampRef, (snapshot) => {
         if (snapshot.exists()) {
-            const status = snapshot.val();
-            statusElement.textContent = `Status: ${status ? "On" : "Off"}`;
-            updateStateCallback(status);
+            isLampOn = snapshot.val();
+            lampStatus.textContent = `Status: ${isLampOn ? "On" : "Off"}`;
         } else {
-            statusElement.textContent = "Status: Unknown";
+            lampStatus.textContent = "Status: Unknown";
+            console.warn("Lamp status not found.");
+        }
+    });
+
+    onValue(motorRef, (snapshot) => {
+        if (snapshot.exists()) {
+            isMotorOn = snapshot.val();
+            motorStatus.textContent = `Status: ${isMotorOn ? "On" : "Off"}`;
+        } else {
+            motorStatus.textContent = "Status: Unknown";
+            console.warn("Motor status not found.");
         }
     });
 };
 
 // Sync initial device status
 const syncInitialStatus = () => {
-    setupRealtimeListeners();
+    const lampRef = ref(db, '/Lamp');
+    const motorRef = ref(db, '/Ac');
+
+    // Sync lamp status
+    onValue(lampRef, (snapshot) => {
+        if (snapshot.exists()) {
+            isLampOn = snapshot.val();
+            lampStatus.textContent = `Status: ${isLampOn ? "On" : "Off"}`;
+        } else {
+            lampStatus.textContent = "Status: Unknown";
+        }
+    });
+
+    // Sync motor status
+    onValue(motorRef, (snapshot) => {
+        if (snapshot.exists()) {
+            isMotorOn = snapshot.val();
+            motorStatus.textContent = `Status: ${isMotorOn ? "On" : "Off"}`;
+        } else {
+            motorStatus.textContent = "Status: Unknown";
+        }
+    });
 };
